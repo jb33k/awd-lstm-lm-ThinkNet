@@ -65,7 +65,7 @@ class RNNModel(nn.Module):
         self.decoder.bias.data.fill_(0)
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, input, hidden, return_h=False):
+    def forward(self, input, hidden, return_h=False, decoded=False):
         emb = embedded_dropout(self.encoder, input, dropout=self.dropoute if self.training else 0)
         #emb = self.idrop(emb)
 
@@ -90,7 +90,13 @@ class RNNModel(nn.Module):
         output = self.lockdrop(raw_output, self.dropout)
         outputs.append(output)
 
-        result = output.view(output.size(0)*output.size(1), output.size(2))
+        # fix per https://github.com/salesforce/awd-lstm-lm/issues/55
+        if decoded:
+            decoded = self.decoder(output.view(output.size(0)*output.size(1), output.size(2)))
+            result = decoded.view(output.size(0), output.size(1), decoded.size(1))
+        else:
+            result = output.view(output.size(0)*output.size(1), output.size(2))
+
         if return_h:
             return result, hidden, raw_outputs, outputs
         return result, hidden

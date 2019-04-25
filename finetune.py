@@ -110,11 +110,11 @@ def evaluate(data_source, batch_size=10):
     hidden = model.init_hidden(batch_size)
     for i in range(0, data_source.size(0) - 1, args.bptt):
         data, targets = get_batch(data_source, i, args, evaluation=True)
-        output, hidden = model(data, hidden)
+        output, hidden = model(data, hidden, decoded=True)
         output_flat = output.view(-1, ntokens)
         total_loss += len(data) * criterion(output_flat, targets).data
         hidden = repackage_hidden(hidden)
-    return total_loss[0] / len(data_source)
+    return total_loss.item() / len(data_source)
 
 
 def train():
@@ -142,7 +142,7 @@ def train():
         hidden = repackage_hidden(hidden)
         optimizer.zero_grad()
 
-        output, hidden, rnn_hs, dropped_rnn_hs = model(data, hidden, return_h=True)
+        output, hidden, rnn_hs, dropped_rnn_hs = model(data, hidden, return_h=True, decoded=True)
         raw_loss = criterion(output.view(-1, ntokens), targets)
 
         loss = raw_loss
@@ -159,7 +159,7 @@ def train():
         total_loss += raw_loss.data
         optimizer.param_groups[0]['lr'] = lr2
         if batch % args.log_interval == 0 and batch > 0:
-            cur_loss = total_loss[0] / args.log_interval
+            cur_loss = total_loss.item() / args.log_interval
             elapsed = time.time() - start_time
             print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
@@ -174,8 +174,7 @@ def train():
 
 # Load the best saved model.
 with open(args.save, 'rb') as f:
-    model = torch.load(f)
-
+    model, _0, _1 = torch.load(f)
 
 # Loop over epochs.
 lr = args.lr

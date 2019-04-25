@@ -68,13 +68,13 @@ def evaluate(data_source, batch_size=10, window=args.window):
     for i in range(0, data_source.size(0) - 1, args.bptt):
         if i > 0: print(i, len(data_source), math.exp(total_loss / i))
         data, targets = get_batch(data_source, i, evaluation=True, args=args)
-        output, hidden, rnn_outs, _ = model(data, hidden, return_h=True)
+        output, hidden, rnn_outs, _ = model(data, hidden, return_h=True, decoded=True)
         rnn_out = rnn_outs[-1].squeeze()
         output_flat = output.view(-1, ntokens)
         ###
         # Fill pointer history
         start_idx = len(next_word_history) if next_word_history is not None else 0
-        next_word_history = torch.cat([one_hot(t.data[0], ntokens) for t in targets]) if next_word_history is None else torch.cat([next_word_history, torch.cat([one_hot(t.data[0], ntokens) for t in targets])])
+        next_word_history = torch.cat([one_hot(t.data.item(), ntokens) for t in targets]) if next_word_history is None else torch.cat([next_word_history, torch.cat([one_hot(t.data.item(), ntokens) for t in targets])])
         #print(next_word_history)
         pointer_history = Variable(rnn_out.data) if pointer_history is None else torch.cat([pointer_history, Variable(rnn_out.data)], dim=0)
         #print(pointer_history)
@@ -104,7 +104,7 @@ def evaluate(data_source, batch_size=10, window=args.window):
                 p = lambdah * ptr_dist + (1 - lambdah) * vocab_loss
             ###
             target_loss = p[targets[idx].data]
-            loss += (-torch.log(target_loss)).data[0]
+            loss += (-torch.log(target_loss)).data.item()
         total_loss += loss / batch_size
         ###
         hidden = repackage_hidden(hidden)
@@ -115,10 +115,11 @@ def evaluate(data_source, batch_size=10, window=args.window):
 # Load the best saved model.
 with open(args.save, 'rb') as f:
     if not args.cuda:
-        model = torch.load(f, map_location=lambda storage, loc: storage)
+        model  = torch.load(f, map_location=lambda storage, loc: storage)
     else:
         model = torch.load(f)
-print(model)
+    if len(model) > 1:
+        model = model[0]
 
 # Run on val data.
 val_loss = evaluate(val_data, test_batch_size)

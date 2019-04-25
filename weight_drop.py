@@ -28,6 +28,7 @@ class WeightDrop(torch.nn.Module):
             w = getattr(self.module, name_w)
             del self.module._parameters[name_w]
             self.module.register_parameter(name_w + '_raw', Parameter(w.data))
+            setattr(self, name_w + '_raw', w.data)
 
     def _setweights(self):
         for name_w in self.weights:
@@ -40,6 +41,8 @@ class WeightDrop(torch.nn.Module):
                 w = mask.expand_as(raw_w) * raw_w
             else:
                 w = torch.nn.functional.dropout(raw_w, p=self.dropout, training=self.training)
+            if hasattr(self.module, name_w):
+                delattr(self.module, name_w)
             setattr(self.module, name_w, w)
 
     def forward(self, *args):

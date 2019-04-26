@@ -8,7 +8,7 @@ import torch.nn as nn
 import data
 import model
 
-from utils import batchify, get_batch, repackage_hidden
+from utils import batchify, get_batch, repackage_hidden, tn_m_hidden, add_tn_params
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='data/penn/',
@@ -64,6 +64,9 @@ parser.add_argument('--optimizer', type=str,  default='sgd',
                     help='optimizer to use (sgd, adam)')
 parser.add_argument('--when', nargs="+", type=int, default=[-1],
                     help='When (which epochs) to divide the learning rate by 10 - accepts multiple')
+# ThinkNet params
+add_tn_params(parser)
+
 args = parser.parse_args()
 args.tied = True
 
@@ -162,11 +165,13 @@ def evaluate(data_source, batch_size=10):
     hidden = model.init_hidden(batch_size)
     for i in range(0, data_source.size(0) - 1, args.bptt):
         data, targets = get_batch(data_source, i, args, evaluation=True)
-        output, hidden = model(data, hidden)
+        hidden_previous = hidden
+        for tn_timestep in range(args.tn_timesteps):
+            output, hidden = model(data, tn_m_hidden(hidden, hidden_previous))
+            hidden_previous = hidden
         total_loss += len(data) * criterion(model.decoder.weight, model.decoder.bias, output, targets).data
         hidden = repackage_hidden(hidden)
     return total_loss.item() / len(data_source)
-
 
 def train():
     # Turn on training mode which enables dropout.
@@ -181,7 +186,7 @@ def train():
         # Prevent excessively small or negative sequence lengths
         seq_len = max(5, int(np.random.normal(bptt, 5)))
         # There's a very small chance that it could select a very long sequence length resulting in OOM
-        # seq_len = min(seq_len, args.bptt + 10)
+        seq_len = min(seq_len, args.bptt + 10)
 
         lr2 = optimizer.param_groups[0]['lr']
         optimizer.param_groups[0]['lr'] = lr2 * seq_len / args.bptt
@@ -193,16 +198,24 @@ def train():
         hidden = repackage_hidden(hidden)
         optimizer.zero_grad()
 
-        output, hidden, rnn_hs, dropped_rnn_hs = model(data, hidden, return_h=True)
-        raw_loss = criterion(model.decoder.weight, model.decoder.bias, output, targets)
+        tn_losses = torch.zeros(args.tn_timesteps)
+        hidden_previous = hidden
+        for tn_timestep in range(args.tn_timesteps):
+            output, hidden, rnn_hs, dropped_rnn_hs = model(data, tn_m_hidden(hidden, hidden_previous), return_h=True)
+            hidden_previous = hidden
+            raw_loss = criterion(model.decoder.weight, model.decoder.bias, output, targets)
+            loss = raw_loss
+            # Activiation Regularization
+            if args.alpha: loss = loss + sum(args.alpha * dropped_rnn_h.pow(2).mean() for dropped_rnn_h in dropped_rnn_hs[-1:])
+            # Temporal Activation Regularization (slowness)
+            if args.beta: loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
+            tn_losses[tn_timestep] = loss
 
-        loss = raw_loss
-        # Activiation Regularization
-        if args.alpha: loss = loss + sum(args.alpha * dropped_rnn_h.pow(2).mean() for dropped_rnn_h in dropped_rnn_hs[-1:])
-        # Temporal Activation Regularization (slowness)
-        if args.beta: loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
+        if args.tn_delta:
+            loss = tn_losses.max() + tn_losses[-1] - tn_losses[0]
+        else:
+            loss = tn_losses[-1]
         loss.backward()
-
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         if args.clip: torch.nn.utils.clip_grad_norm_(params, args.clip)
         optimizer.step()
@@ -292,8 +305,11 @@ except KeyboardInterrupt:
 model_load(args.save)
 
 # Run on test data.
-test_loss = evaluate(test_data, test_batch_size)
-print('=' * 89)
-print('| End of training | test loss {:5.2f} | test ppl {:8.2f} | test bpc {:8.3f}'.format(
-    test_loss, math.exp(test_loss), test_loss / math.log(2)))
-print('=' * 89)
+for i in range(1, 1+args.tn_test_timesteps):
+    print('test TN timesteps=', i)
+    args.tn_timesteps = i
+    test_loss = evaluate(test_data, test_batch_size)
+    print('=' * 89)
+    print('| End of training | test loss {:5.2f} | test ppl {:8.2f} | test bpc {:8.3f}'.format(
+        test_loss, math.exp(test_loss), test_loss / math.log(2)))
+    print('=' * 89)

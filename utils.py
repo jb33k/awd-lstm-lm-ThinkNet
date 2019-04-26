@@ -27,3 +27,23 @@ def get_batch(source, i, args, seq_len=None, evaluation=False):
     data = source[i:i+seq_len]
     target = source[i+1:i+1+seq_len].view(-1)
     return data, target
+
+def tn_m_hidden(hidden, hidden_previous):
+    h = []
+    for hidden_i, hidden_v in enumerate(hidden):
+        h.append(
+            [
+                (hidden_v[0]+hidden_previous[hidden_i][0])/2, 
+                (hidden_v[1]+hidden_previous[hidden_i][1])/2
+            ]
+        ) 
+    return h
+
+def add_tn_params(parser):
+    # ThinkNet params
+    parser.add_argument('--tn_timesteps', type=int, default=1,
+                        help='training ThinkNet timesteps')
+    parser.add_argument('--tn_test_timesteps', type=int, default=10,
+                        help='test ThinkNet timesteps')
+    parser.add_argument('--tn_delta', action='store_true',
+                        help='use Delta Loss')

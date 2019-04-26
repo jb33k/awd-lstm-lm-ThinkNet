@@ -1,3 +1,20 @@
+# AWD-LSTM-ThinkNet
+
+This repository contains the code for the paper [Think Again Networks, the Delta Loss, and an Application in Language Modeling](https://alexsalle.com/ThinkAgainNetworks.pdf).
+
+To train and test our best model (AWD-LSTM-ThinkNet T3) on the Penn Treebank, run:
+
++ `./getdata.sh`
++ `python main.py --batch_size 20 --data data/penn --dropouti 0.4 --dropouth 0.25 --seed  326456267  --epoch 500 --save PTB.pt  --tn_timesteps 3`
++ `python finetune.py --batch_size 20 --data data/penn --dropouti 0.4 --dropouth 0.25 --seed 326456267  --epoch 500 --save PTB.pt  --tn_timesteps 3`
++ `python pointer.py --data data/penn --save PTB.pt --lambdasm 0.1 --theta 1.0 --window 500 --bptt 5000  --tn_timesteps 3`
+
+See the README below from the [AWD-LSTM toolkit](https://github.com/salesforce/awd-lstm-lm) for more info on AWD-LSTM.
+
+Citation information will be available on April 26th, 2019.
+
+-----------------------------------------------------------------------------------------------
+
 # LSTM and QRNN Language Model Toolkit
 
 This repository contains the code used for two [Salesforce Research](https://einstein.ai/) papers:

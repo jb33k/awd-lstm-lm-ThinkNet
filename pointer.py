@@ -9,7 +9,7 @@ from torch.autograd import Variable
 import data
 import model
 
-from utils import batchify, get_batch, repackage_hidden
+from utils import batchify, get_batch, repackage_hidden, tn_m_hidden, add_tn_params
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='data/penn',
@@ -28,6 +28,9 @@ parser.add_argument('--theta', type=float, default=0.6625523432485668,
                     help='mix between uniform distribution and pointer softmax distribution over previous words')
 parser.add_argument('--lambdasm', type=float, default=0.12785920428335693,
                     help='linear mix between only pointer (1) and only vocab (0) distribution')
+# ThinkNet params
+add_tn_params(parser)
+
 args = parser.parse_args()
 
 ###############################################################################
@@ -68,7 +71,10 @@ def evaluate(data_source, batch_size=10, window=args.window):
     for i in range(0, data_source.size(0) - 1, args.bptt):
         if i > 0: print(i, len(data_source), math.exp(total_loss / i))
         data, targets = get_batch(data_source, i, evaluation=True, args=args)
-        output, hidden, rnn_outs, _ = model(data, hidden, return_h=True, decoded=True)
+        hidden_previous = hidden
+        for tn_timestep in range(args.tn_timesteps):
+            output, hidden, rnn_outs, _ = model(data, tn_m_hidden(hidden, hidden_previous), return_h=True, decoded=True)
+            hidden_previous = hidden
         rnn_out = rnn_outs[-1].squeeze()
         output_flat = output.view(-1, ntokens)
         ###
@@ -118,7 +124,7 @@ with open(args.save, 'rb') as f:
         model  = torch.load(f, map_location=lambda storage, loc: storage)
     else:
         model = torch.load(f)
-    if len(model) > 1:
+    if isinstance(model, list):
         model = model[0]
 
 # Run on val data.
@@ -129,8 +135,11 @@ print('| End of pointer | val loss {:5.2f} | val ppl {:8.2f}'.format(
 print('=' * 89)
 
 # Run on test data.
-test_loss = evaluate(test_data, test_batch_size)
-print('=' * 89)
-print('| End of pointer | test loss {:5.2f} | test ppl {:8.2f}'.format(
-    test_loss, math.exp(test_loss)))
-print('=' * 89)
+for i in range(1, 1+args.tn_test_timesteps):
+    print('test TN timesteps=', i)
+    args.tn_timesteps = i
+    test_loss = evaluate(test_data, test_batch_size)
+    print('=' * 89)
+    print('| End of pointer | test loss {:5.2f} | test ppl {:8.2f}'.format(
+        test_loss, math.exp(test_loss)))
+    print('=' * 89)

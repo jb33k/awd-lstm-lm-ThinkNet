@@ -9,7 +9,7 @@ import torch.nn as nn
 import data
 import model
 
-from utils import batchify, get_batch, repackage_hidden
+from utils import batchify, get_batch, repackage_hidden, tn_m_hidden, add_tn_params
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='data/penn/',
@@ -61,6 +61,9 @@ parser.add_argument('--beta', type=float, default=1,
                     help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
 parser.add_argument('--wdecay', type=float, default=1.2e-6,
                     help='weight decay applied to all weights')
+# ThinkNet params
+add_tn_params(parser)
+
 args = parser.parse_args()
 
 # Set the random seed manually for reproducibility.
@@ -110,7 +113,10 @@ def evaluate(data_source, batch_size=10):
     hidden = model.init_hidden(batch_size)
     for i in range(0, data_source.size(0) - 1, args.bptt):
         data, targets = get_batch(data_source, i, args, evaluation=True)
-        output, hidden = model(data, hidden, decoded=True)
+        hidden_previous = hidden
+        for tn_timestep in range(args.tn_timesteps):
+            output, hidden = model(data, tn_m_hidden(hidden, hidden_previous), decoded=True)
+            hidden_previous = hidden
         output_flat = output.view(-1, ntokens)
         total_loss += len(data) * criterion(output_flat, targets).data
         hidden = repackage_hidden(hidden)
@@ -142,14 +148,24 @@ def train():
         hidden = repackage_hidden(hidden)
         optimizer.zero_grad()
 
-        output, hidden, rnn_hs, dropped_rnn_hs = model(data, hidden, return_h=True, decoded=True)
-        raw_loss = criterion(output.view(-1, ntokens), targets)
+        tn_losses = torch.zeros(args.tn_timesteps)
+        hidden_previous = hidden
+        for tn_timestep in range(args.tn_timesteps):
+            output, hidden, rnn_hs, dropped_rnn_hs = model(data, tn_m_hidden(hidden, hidden_previous), return_h=True, decoded=True)
+            hidden_previous = hidden
+            raw_loss = criterion(output.view(-1, ntokens), targets)
 
-        loss = raw_loss
-        # Activiation Regularization
-        loss = loss + sum(args.alpha * dropped_rnn_h.pow(2).mean() for dropped_rnn_h in dropped_rnn_hs[-1:])
-        # Temporal Activation Regularization (slowness)
-        loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
+            loss = raw_loss
+            # Activiation Regularization
+            loss = loss + sum(args.alpha * dropped_rnn_h.pow(2).mean() for dropped_rnn_h in dropped_rnn_hs[-1:])
+            # Temporal Activation Regularization (slowness)
+            loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
+            tn_losses[tn_timestep] = loss
+
+        if args.tn_delta:
+            loss = tn_losses.max() + tn_losses[-1] - tn_losses[0]
+        else:
+            loss = tn_losses[-1]
         loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
@@ -174,7 +190,9 @@ def train():
 
 # Load the best saved model.
 with open(args.save, 'rb') as f:
-    model, _0, _1 = torch.load(f)
+    model = torch.load(f)
+    if isinstance(model, list):
+        model = model[0]
 
 # Loop over epochs.
 lr = args.lr
@@ -211,8 +229,7 @@ try:
 
         if (len(best_val_loss)>args.nonmono and val_loss2 > min(best_val_loss[:-args.nonmono])):
             print('Done!')
-            import sys
-            sys.exit(1)
+            raise KeyboardInterrupt
             optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
             #optimizer.param_groups[0]['lr'] /= 2.
         best_val_loss.append(val_loss2)
@@ -224,10 +241,15 @@ except KeyboardInterrupt:
 # Load the best saved model.
 with open(args.save, 'rb') as f:
     model = torch.load(f)
+    if isinstance(model, list):
+        model = model[0]
     
 # Run on test data.
-test_loss = evaluate(test_data, test_batch_size)
-print('=' * 89)
-print('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
-    test_loss, math.exp(test_loss)))
-print('=' * 89)
+for i in range(1, 1+args.tn_test_timesteps):
+    print('test TN timesteps=', i)
+    args.tn_timesteps = i
+    test_loss = evaluate(test_data, test_batch_size)
+    print('=' * 89)
+    print('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
+        test_loss, math.exp(test_loss)))
+    print('=' * 89)

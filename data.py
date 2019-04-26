@@ -10,15 +10,19 @@ class Dictionary(object):
         self.idx2word = []
         self.counter = Counter()
         self.total = 0
+        self._finalized = False
 
     def add_word(self, word):
-        if word not in self.word2idx:
-            self.idx2word.append(word)
-            self.word2idx[word] = len(self.idx2word) - 1
-        token_id = self.word2idx[word]
-        self.counter[token_id] += 1
+        self.counter[word] += 1
         self.total += 1
-        return self.word2idx[word]
+
+    def finalize(self):
+        if self._finalized:
+            return
+        self._finalized = True
+        for word, _ in self.counter.most_common():
+            self.word2idx[word] = len(self.idx2word)
+            self.idx2word.append(word)
 
     def __len__(self):
         return len(self.idx2word)
@@ -42,6 +46,8 @@ class Corpus(object):
                 tokens += len(words)
                 for word in words:
                     self.dictionary.add_word(word)
+
+        self.dictionary.finalize()
 
         # Tokenize file content
         with open(path, 'r') as f:

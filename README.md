@@ -1,6 +1,6 @@
 # AWD-LSTM-ThinkNet
 
-This repository contains the code for the paper [Think Again Networks, the Delta Loss, and an Application in Language Modeling](https://alexsalle.com/ThinkAgainNetworks.pdf).
+This repository contains the code for the paper [Think Again Networks, the Delta Loss, and an Application in Language Modeling](https://arxiv.org/abs/1904.11816).
 
 To train and test our best model (AWD-LSTM-ThinkNet T3) on the Penn Treebank, run:
 
@@ -11,7 +11,16 @@ To train and test our best model (AWD-LSTM-ThinkNet T3) on the Penn Treebank, ru
 
 See the README below from the [AWD-LSTM toolkit](https://github.com/salesforce/awd-lstm-lm) for more info on AWD-LSTM.
 
-Citation information will be available on April 26th, 2019.
+If you use this code in your work, please cite:
+
+```
+@article{salle2019thinknet,
+  title={Think Again Networks, the Delta Loss, and an Application in Language Modeling},
+  author={Salle, Alexandre and Prates, Marcelo},
+  journal={arXiv preprint arXiv:1904.11816},
+  year={2019}
+}
+```
 
 -----------------------------------------------------------------------------------------------
 
